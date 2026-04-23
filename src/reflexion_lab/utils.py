@@ -13,7 +13,20 @@ def normalize_answer(text: str) -> str:
 
 def load_dataset(path: str | Path) -> list[QAExample]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    return [QAExample.model_validate(item) for item in raw]
+    examples = []
+    for item in raw:
+        if "qid" in item:
+            examples.append(QAExample.model_validate(item))
+        else:
+            context_chunks = [{"title": title, "text": "".join(sentences)} for title, sentences in item.get("context", [])]
+            examples.append(QAExample(
+                qid=item.get("_id", "unknown"),
+                difficulty=item.get("level", "medium"),
+                question=item.get("question", ""),
+                gold_answer=item.get("answer", ""),
+                context=context_chunks
+            ))
+    return examples
 
 def save_jsonl(path: str | Path, records: Iterable[RunRecord]) -> None:
     path = Path(path)

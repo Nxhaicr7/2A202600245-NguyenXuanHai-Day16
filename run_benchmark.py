@@ -9,8 +9,10 @@ from src.reflexion_lab.utils import load_dataset, save_jsonl
 app = typer.Typer(add_completion=False)
 
 @app.command()
-def main(dataset: str = "data/hotpot_mini.json", out_dir: str = "outputs/sample_run", reflexion_attempts: int = 3) -> None:
+def main(dataset: str = "data/hotpot_mini.json", out_dir: str = "outputs/sample_run", reflexion_attempts: int = 3, limit: int = 100) -> None:
     examples = load_dataset(dataset)
+    if limit > 0:
+        examples = examples[:limit]
     react = ReActAgent()
     reflexion = ReflexionAgent(max_attempts=reflexion_attempts)
     react_records = [react.run(example) for example in examples]

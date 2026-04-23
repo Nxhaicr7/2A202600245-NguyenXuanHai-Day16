@@ -1,7 +1,6 @@
 from __future__ import annotations
-from typing import Literal, Optional, TypedDict
+from typing import Literal, Optional, TypedDict, List
 from pydantic import BaseModel, Field
-
 class ContextChunk(BaseModel):
     title: str
     text: str
@@ -14,13 +13,18 @@ class QAExample(BaseModel):
     context: list[ContextChunk]
 
 class JudgeResult(BaseModel):
-    # TODO: Học viên định nghĩa các trường cần thiết cho kết quả đánh giá (score, reason, ...)
-    pass
+    score: int
+    reason: str
+    is_passed: bool 
+    flaws: List[str]
+    suggestions: str 
 
 class ReflectionEntry(BaseModel):
-    # TODO: Học viên định nghĩa các trường cần thiết cho một mục reflection (attempt_id, lesson, strategy, ...)
-    pass
-
+    attempt_id: int
+    lesson: str
+    strategy: str 
+    critique: str
+    improvement_plan: str 
 class AttemptTrace(BaseModel):
     attempt_id: int
     answer: str

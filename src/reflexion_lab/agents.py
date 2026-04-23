@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
-from .mock_runtime import FAILURE_MODE_BY_QID, actor_answer, evaluator, reflector
+from .mock_runtime import actor_answer, evaluator, reflector, determine_failure_mode
 from .schemas import AttemptTrace, QAExample, ReflectionEntry, RunRecord
 
 @dataclass
@@ -9,35 +9,41 @@ class BaseAgent:
     agent_type: Literal["react", "reflexion"]
     max_attempts: int = 1
     def run(self, example: QAExample) -> RunRecord:
-        reflection_memory: list[str] = []
+        reflection_memory: list[ReflectionEntry] = []
         reflections: list[ReflectionEntry] = []
         traces: list[AttemptTrace] = []
         final_answer = ""
         final_score = 0
+        final_reason = ""
         for attempt_id in range(1, self.max_attempts + 1):
-            answer = actor_answer(example, attempt_id, self.agent_type, reflection_memory)
-            judge = evaluator(example, answer)
-            # TODO: Replace with actual token count from LLM response
-            token_estimate = 320 + (attempt_id * 65) + (120 if self.agent_type == "reflexion" else 0)
-            # TODO: Replace with actual latency measurement
-            latency_ms = 160 + (attempt_id * 40) + (90 if self.agent_type == "reflexion" else 0)
-            trace = AttemptTrace(attempt_id=attempt_id, answer=answer, score=judge.score, reason=judge.reason, token_estimate=token_estimate, latency_ms=latency_ms)
+            answer, a_tok, a_lat = actor_answer(example, attempt_id, self.agent_type, reflection_memory)
+            judge, j_tok, j_lat = evaluator(example, answer)
+            
+            token_estimate = a_tok + j_tok
+            latency_ms = a_lat + j_lat
+            
+            trace = AttemptTrace(attempt_id=attempt_id, answer=answer, score=judge.score, reason=judge.reason, token_estimate=token_estimate, latency_ms=int(latency_ms))
             final_answer = answer
             final_score = judge.score
+            final_reason = judge.reason
             if judge.score == 1:
                 traces.append(trace)
                 break
             
-            # TODO: Học viên triển khai logic Reflexion tại đây
-            # 1. Kiểm tra nếu agent_type là 'reflexion' và chưa hết số lần attempt
-            # 2. Gọi hàm reflector để lấy nội dung reflection
-            # 3. Cập nhật reflection_memory để Actor dùng cho lần sau
-            pass
+            if self.agent_type == "reflexion" and attempt_id < self.max_attempts:
+                reflection_result, r_tok, r_lat = reflector(example, attempt_id, judge)
+                trace.token_estimate += r_tok
+                trace.latency_ms += int(r_lat)
+                trace.reflection = reflection_result
+                reflections.append(reflection_result)
+                reflection_memory.append(reflection_result)
+                
             traces.append(trace)
+            
         total_tokens = sum(t.token_estimate for t in traces)
         total_latency = sum(t.latency_ms for t in traces)
-        failure_mode = "none" if final_score == 1 else FAILURE_MODE_BY_QID.get(example.qid, "wrong_final_answer")
-        return RunRecord(qid=example.qid, question=example.question, gold_answer=example.gold_answer, agent_type=self.agent_type, predicted_answer=final_answer, is_correct=bool(final_score), attempts=len(traces), token_estimate=total_tokens, latency_ms=total_latency, failure_mode=failure_mode, reflections=reflections, traces=traces)
+        failure_mode = "none" if final_score == 1 else determine_failure_mode(final_reason, reflection_memory)
+        return RunRecord(qid=example.qid, question=example.question, gold_answer=example.gold_answer, agent_type=self.agent_type, predicted_answer=final_answer, is_correct=bool(final_score), attempts=len(traces), token_estimate=total_tokens, latency_ms=int(total_latency), failure_mode=failure_mode, reflections=reflections, traces=traces)
 
 class ReActAgent(BaseAgent):
     def __init__(self) -> None:
